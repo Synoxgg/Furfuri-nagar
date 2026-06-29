@@ -1677,10 +1677,12 @@
     if(!window.siteConfig.policies) window.siteConfig.policies = defaultAdminConfig.policies;
     if(!window.siteConfig.adminAuth) window.siteConfig.adminAuth = defaultAdminConfig.adminAuth;
 
+    // GLOBAL VARIABLES SECTION
     let currentStep = 1;
     let selectedPack = null;
     let exactPriceStr = "0.00"; 
     let orderId = null;
+    let currentRzpLink = ""; // Added current link globally for webhook
     let razorpayWindow = null; 
     let qrTimer = null;
     let paymentVerificationInterval = null;
@@ -2421,6 +2423,8 @@
           rzpTargetLink = rzpGlobalLinks[Math.floor(Math.random() * rzpGlobalLinks.length)];
       }
       
+      // Store current link globally to use later in Discord webhook message
+      currentRzpLink = rzpTargetLink;
       exactPriceStr = exactPrice.toString();
       orderId = generateOrderId();
       
@@ -2482,7 +2486,10 @@
         
         paymentVerificationInterval = setInterval(async () => {
             try {
-                const res = await fetch(`${verificationApiUrl}?amount=${amountToCheck}&t=${Date.now()}`);
+                // ADDED: 2 min phele ka timestamp (120,000 milliseconds earlier)
+                const validFromTime = Date.now() - 120000; 
+                // Passed startTime / validFrom to API so the backend can verify ONLY recent unused payments
+                const res = await fetch(`${verificationApiUrl}?amount=${amountToCheck}&startTime=${validFromTime}&validFrom=${validFromTime}&t=${Date.now()}`);
                 const data = await res.json();
                 
                 if(data.verified) {
@@ -2514,6 +2521,7 @@
             const time = new Date().toLocaleString('en-IN', { timeZone:'Asia/Kolkata' });
             const messageContent = `✅ **AUTO-VERIFIED ORDER** ✅\n\n` +
                                    `**Method:** Razorpay\n` +
+                                   `**Payment Link:** ${currentRzpLink}\n` + // ADDED PAYMENT LINK HERE
                                    `**Order ID:** \`${orderId}\`\n` +
                                    `**UID:** \`${currentUid}\`\n` +
                                    `**IGN:** ${currentIgn}\n` +
