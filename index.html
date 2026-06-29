@@ -1677,7 +1677,6 @@
     if(!window.siteConfig.policies) window.siteConfig.policies = defaultAdminConfig.policies;
     if(!window.siteConfig.adminAuth) window.siteConfig.adminAuth = defaultAdminConfig.adminAuth;
 
-    // GLOBAL VARIABLES SECTION
     let currentStep = 1;
     let selectedPack = null;
     let exactPriceStr = "0.00"; 
@@ -2486,21 +2485,44 @@
         
         paymentVerificationInterval = setInterval(async () => {
             try {
-                // ADDED: 2 min phele ka timestamp (120,000 milliseconds earlier)
-                const validFromTime = Date.now() - 120000; 
-                // Passed startTime / validFrom to API so the backend can verify ONLY recent unused payments
-                const res = await fetch(`${verificationApiUrl}?amount=${amountToCheck}&startTime=${validFromTime}&validFrom=${validFromTime}&t=${Date.now()}`);
+                const res = await fetch(`${verificationApiUrl}?amount=${amountToCheck}&t=${Date.now()}`);
                 const data = await res.json();
                 
                 if(data.verified) {
-                    clearInterval(paymentVerificationInterval);
-                    if(qrTimer) clearInterval(qrTimer);
-                    if (razorpayWindow && !razorpayWindow.closed) { razorpayWindow.close(); }
+                    let isRecentPayment = true;
+
+                    // NAYA LOGIC: Google sheet se aane wale time ko check karna
+                    let sheetTime = data.timestamp || data.time || data.date;
                     
-                    // Release lock on success
-                    if(typeof window.releaseLock === 'function') { window.releaseLock(exactPriceStr); }
-                    
-                    processSuccessfulPayment();
+                    if (sheetTime) {
+                        // Safe parsing logic for all devices including iPhones (Safari fix)
+                        let timeStr = String(sheetTime).trim().replace(/-/g, '/');
+                        let paymentTimeMs = new Date(timeStr).getTime();
+                        
+                        if (!isNaN(paymentTimeMs)) {
+                            let timeDiff = Date.now() - paymentTimeMs;
+                            
+                            // 120000 ms = strictly 2 minutes
+                            // Ek small 10 sec ka buffer lagaya hai (130000 ms) delay aur network lag handle karne ke liye
+                            if (timeDiff > 130000) {
+                                isRecentPayment = false;
+                                console.log("Ignored: Unused pack found but it is older than 2 minutes.");
+                            }
+                        } else {
+                            console.warn("Invalid date format from sheet:", sheetTime);
+                        }
+                    }
+
+                    if (isRecentPayment) {
+                        clearInterval(paymentVerificationInterval);
+                        if(qrTimer) clearInterval(qrTimer);
+                        if (razorpayWindow && !razorpayWindow.closed) { razorpayWindow.close(); }
+                        
+                        // Release lock on success
+                        if(typeof window.releaseLock === 'function') { window.releaseLock(exactPriceStr); }
+                        
+                        processSuccessfulPayment();
+                    }
                 }
             } catch (err) { console.log("Polling payment status..."); }
         }, 5000); 
@@ -2521,7 +2543,7 @@
             const time = new Date().toLocaleString('en-IN', { timeZone:'Asia/Kolkata' });
             const messageContent = `✅ **AUTO-VERIFIED ORDER** ✅\n\n` +
                                    `**Method:** Razorpay\n` +
-                                   `**Payment Link:** ${currentRzpLink}\n` + // ADDED PAYMENT LINK HERE
+                                   `**Payment Link:** ${currentRzpLink}\n` + // DISCORD ME PAYMENT LINK
                                    `**Order ID:** \`${orderId}\`\n` +
                                    `**UID:** \`${currentUid}\`\n` +
                                    `**IGN:** ${currentIgn}\n` +
